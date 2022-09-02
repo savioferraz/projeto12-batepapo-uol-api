@@ -1,22 +1,52 @@
 import express from "express";
 import cors from "cors";
 import { MongoClient } from "mongodb";
+import joi from "joi";
+import dayjs from "dayjs";
 import dotenv from "dotenv";
 dotenv.config();
 
+const now = dayjs();
 const server = express();
+server.use(express.json());
+server.use(cors());
 const mongoClient = new MongoClient(process.env.MONGO_URI);
 let db;
 mongoClient.connect().then(() => {
   db = mongoClient.db("batepapo_uol");
-
-  server.use(express.json());
-  server.use(cors());
 });
 
 server.post("/participants", async (req, res) => {
+  const userSchema = joi.object({
+    name: joi.string().trim().required(),
+  });
+  const validation = userSchema.validate(req.body);
+  const [sameName] = await db.collection("participante").find({}).toArray();
+
+  console.log(sameName.name);
+  console.log(req.body.name);
+  if (sameName.name === req.body.name) {
+    return res.sendStatus(409);
+  }
+  if (validation.error) {
+    console.log(validation.error.details);
+    return res.sendStatus(422);
+  }
   try {
-  } catch (error) {}
+    await db
+      .collection("participante")
+      .insertOne({ name: req.body.name, lastStatus: Date.now() });
+    db.collection("mensagem").insertOne({
+      from: req.body.name,
+      to: "Todos",
+      text: "entra na sala...",
+      type: "status",
+      time: "HH:MM:SS",
+    });
+    res.sendStatus(201);
+  } catch (error) {
+    res.sendStatus(400);
+  }
 });
 
 server.get("/participants", async (req, res) => {
@@ -29,10 +59,21 @@ server.get("/participants", async (req, res) => {
 });
 
 server.post("/messages", async (req, res) => {
-  const messages = req.body;
+  // const username = req.headers.user;
+  const messages = {
+    from: req.headers.user,
+    to: req.body.to,
+    text: req.body.text,
+    type: req.body.type,
+  };
+
+  console.log(messages);
   try {
-    await db.collection("mensagem");
-  } catch (error) {}
+    // await db.collection("mensagem").insert(messages);
+    res.sendStatus(201);
+  } catch (error) {
+    res.sendStatus(400);
+  }
 });
 
 server.get("/messages", async (req, res) => {
@@ -51,8 +92,13 @@ server.get("/messages", async (req, res) => {
 });
 
 server.post("/status", async (req, res) => {
+  const username = req.headers.user;
   try {
-  } catch (error) {}
+    res.sendStatus(201);
+  } catch (error) {
+    res.sendStatus(404);
+    s;
+  }
 });
 
 server.listen(5000, () => console.log("Listening on port 5000"));
