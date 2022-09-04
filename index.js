@@ -1,4 +1,4 @@
-import express from "express";
+import express, { text } from "express";
 import cors from "cors";
 import { MongoClient } from "mongodb";
 import joi from "joi";
@@ -6,31 +6,42 @@ import dayjs from "dayjs";
 import dotenv from "dotenv";
 dotenv.config();
 
-const now = dayjs();
 const server = express();
 server.use(express.json());
 server.use(cors());
+
 const mongoClient = new MongoClient(process.env.MONGO_URI);
 let db;
 mongoClient.connect().then(() => {
   db = mongoClient.db("batepapo_uol");
 });
 
-server.post("/participants", async (req, res) => {
-  const userSchema = joi.object({
-    name: joi.string().trim().required(),
-  });
-  const validation = userSchema.validate(req.body);
-  const [sameName] = await db.collection("participante").find({}).toArray();
+const now = dayjs();
 
-  console.log(sameName.name);
-  console.log(req.body.name);
-  if (sameName.name === req.body.name) {
-    return res.sendStatus(409);
+const userNameSchema = joi.object({
+  name: joi.string().trim().required(),
+});
+const messageSchema = joi.object({
+  from: joi.string().trim().required(),
+  to: joi.string().trim().required(),
+  text: joi.string().trim().required(),
+  type: joi.string().valid("message", "private_message"),
+  time: joi.any(),
+});
+
+server.post("/participants", async (req, res) => {
+  const validation = userNameSchema.validate(req.body, { abortEarly: false });
+  const [sameName] = await db
+    .collection("participante")
+    .find({ name: req.body.name })
+    .toArray();
+
+  if (sameName) {
+    return res.status(409).send("Username already in use");
   }
   if (validation.error) {
-    console.log(validation.error.details);
-    return res.sendStatus(422);
+    const errors = validation.error.details.map((error) => error.message);
+    return res.status(422).send(errors);
   }
   try {
     await db
@@ -41,7 +52,7 @@ server.post("/participants", async (req, res) => {
       to: "Todos",
       text: "entra na sala...",
       type: "status",
-      time: "HH:MM:SS",
+      time: now.format("HH:mm:ss"),
     });
     res.sendStatus(201);
   } catch (error) {
@@ -59,17 +70,30 @@ server.get("/participants", async (req, res) => {
 });
 
 server.post("/messages", async (req, res) => {
-  // const username = req.headers.user;
   const messages = {
     from: req.headers.user,
     to: req.body.to,
     text: req.body.text,
     type: req.body.type,
+    time: now.format("HH:mm:ss"),
   };
 
-  console.log(messages);
+  const [activeUser] = await db
+    .collection("participante")
+    .find({ name: req.headers.user })
+    .toArray();
+
+  const validation = messageSchema.validate(messages, { abortEarly: false });
+
+  if (!activeUser) {
+    return res.status(422).send("Invalid user");
+  }
+  if (validation.error) {
+    const errors = validation.error.details.map((error) => error.message);
+    return res.status(422).send(errors);
+  }
   try {
-    // await db.collection("mensagem").insert(messages);
+    await db.collection("mensagem").insertOne(messages);
     res.sendStatus(201);
   } catch (error) {
     res.sendStatus(400);
@@ -77,10 +101,20 @@ server.post("/messages", async (req, res) => {
 });
 
 server.get("/messages", async (req, res) => {
-  const limit = req.params.limit;
+  const limit = req.query.limit;
 
   try {
-    const messages = await db.collection("mensagem").find().toArray();
+    const messages = await db
+      .collection("mensagem")
+      .find({
+        $or: [
+          { from: req.headers.user },
+          { to: "Todos" },
+          { to: req.headers.user },
+        ],
+      })
+      .toArray();
+    console.log(req.headers.user, messages);
     if (limit) {
       res.send(messages.slice(-limit));
     } else {
@@ -92,13 +126,35 @@ server.get("/messages", async (req, res) => {
 });
 
 server.post("/status", async (req, res) => {
-  const username = req.headers.user;
+  const [activeUser] = await db
+    .collection("participante")
+    .find({ name: req.headers.user })
+    .toArray();
+
+  console.log(activeUser);
+
+  if (!activeUser) {
+    return res.sendStatus(404);
+  }
   try {
-    res.sendStatus(201);
+    await db
+      .collection("participante")
+      .updateOne(
+        { name: req.headers.user },
+        { $set: { lastStatus: Date.now() } }
+      );
+    res.sendStatus(200);
   } catch (error) {
-    res.sendStatus(404);
-    s;
+    res.sendStatus(400);
   }
 });
+
+async function removeInactive() {
+  await db
+    .collection("participante")
+    .deleteMany({ lastStatus: { $lt: Date.now() - 10000 } });
+}
+
+setInterval(removeInactive, 15000);
 
 server.listen(5000, () => console.log("Listening on port 5000"));
