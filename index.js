@@ -30,20 +30,20 @@ const messageSchema = joi.object({
 });
 
 server.post("/participants", async (req, res) => {
-  const validation = userNameSchema.validate(req.body, { abortEarly: false });
-  const [sameName] = await db
-    .collection("participante")
-    .find({ name: req.body.name })
-    .toArray();
-
-  if (sameName) {
-    return res.status(409).send("Username already in use");
-  }
-  if (validation.error) {
-    const errors = validation.error.details.map((error) => error.message);
-    return res.status(422).send(errors);
-  }
   try {
+    const validation = userNameSchema.validate(req.body, { abortEarly: false });
+    const [sameName] = await db
+      .collection("participante")
+      .find({ name: req.body.name })
+      .toArray();
+
+    if (sameName) {
+      return res.status(409).send("Username already in use");
+    }
+    if (validation.error) {
+      const errors = validation.error.details.map((error) => error.message);
+      return res.status(422).send(errors);
+    }
     await db
       .collection("participante")
       .insertOne({ name: req.body.name, lastStatus: Date.now() });
@@ -70,29 +70,27 @@ server.get("/participants", async (req, res) => {
 });
 
 server.post("/messages", async (req, res) => {
-  const messages = {
-    from: req.headers.user,
-    to: req.body.to,
-    text: req.body.text,
-    type: req.body.type,
-    time: now.format("HH:mm:ss"),
-  };
-
-  const [activeUser] = await db
-    .collection("participante")
-    .find({ name: req.headers.user })
-    .toArray();
-
-  const validation = messageSchema.validate(messages, { abortEarly: false });
-
-  if (!activeUser) {
-    return res.status(422).send("Invalid user");
-  }
-  if (validation.error) {
-    const errors = validation.error.details.map((error) => error.message);
-    return res.status(422).send(errors);
-  }
   try {
+    const messages = {
+      from: req.headers.user,
+      to: req.body.to,
+      text: req.body.text,
+      type: req.body.type,
+      time: now.format("HH:mm:ss"),
+    };
+    const [activeUser] = await db
+      .collection("participante")
+      .find({ name: req.headers.user })
+      .toArray();
+    const validation = messageSchema.validate(messages, { abortEarly: false });
+
+    if (!activeUser) {
+      return res.status(422).send("Invalid user");
+    }
+    if (validation.error) {
+      const errors = validation.error.details.map((error) => error.message);
+      return res.status(422).send(errors);
+    }
     await db.collection("mensagem").insertOne(messages);
     res.sendStatus(201);
   } catch (error) {
@@ -101,9 +99,8 @@ server.post("/messages", async (req, res) => {
 });
 
 server.get("/messages", async (req, res) => {
-  const limit = req.query.limit;
-
   try {
+    const limit = req.query.limit;
     const messages = await db
       .collection("mensagem")
       .find({
@@ -114,6 +111,7 @@ server.get("/messages", async (req, res) => {
         ],
       })
       .toArray();
+
     if (limit) {
       res.send(messages.slice(-limit));
     } else {
@@ -125,15 +123,15 @@ server.get("/messages", async (req, res) => {
 });
 
 server.post("/status", async (req, res) => {
-  const [activeUser] = await db
-    .collection("participante")
-    .find({ name: req.headers.user })
-    .toArray();
-
-  if (!activeUser) {
-    return res.sendStatus(404);
-  }
   try {
+    const [activeUser] = await db
+      .collection("participante")
+      .find({ name: req.headers.user })
+      .toArray();
+
+    if (!activeUser) {
+      return res.sendStatus(404);
+    }
     await db
       .collection("participante")
       .updateOne(
@@ -147,17 +145,16 @@ server.post("/status", async (req, res) => {
 });
 
 server.delete("/messages/:id", async (req, res) => {
-  const id = req.params.id;
-
-  const msg = await db.collection("mensagem").findOne({ _id: ObjectId(id) });
-
-  if (!msg) {
-    return res.sendStatus(404);
-  }
-  if (msg.from != req.headers.user) {
-    return res.sendStatus(401);
-  }
   try {
+    const id = req.params.id;
+    const msg = await db.collection("mensagem").findOne({ _id: ObjectId(id) });
+
+    if (!msg) {
+      return res.sendStatus(404);
+    }
+    if (msg.from != req.headers.user) {
+      return res.sendStatus(401);
+    }
     await db.collection("mensagem").deleteOne({ _id: ObjectId(id) });
     res.sendStatus(201);
   } catch (error) {
@@ -166,27 +163,27 @@ server.delete("/messages/:id", async (req, res) => {
 });
 
 server.put("/messages/:id", async (req, res) => {
-  const id = req.params.id;
-  const message = {
-    from: req.headers.user,
-    to: req.body.to,
-    text: req.body.text,
-    type: req.body.type,
-  };
-  const validation = messageSchema.validate(message, { abortEarly: false });
-  const msg = await db.collection("mensagem").findOne({ _id: ObjectId(id) });
-
-  if (validation.error) {
-    const errors = validation.error.details.map((error) => error.message);
-    return res.status(422).send(errors);
-  }
-  if (!msg) {
-    return res.sendStatus(404);
-  }
-  if (msg.from != req.headers.user) {
-    return res.sendStatus(401);
-  }
   try {
+    const id = req.params.id;
+    const message = {
+      from: req.headers.user,
+      to: req.body.to,
+      text: req.body.text,
+      type: req.body.type,
+    };
+    const validation = messageSchema.validate(message, { abortEarly: false });
+    const msg = await db.collection("mensagem").findOne({ _id: ObjectId(id) });
+
+    if (validation.error) {
+      const errors = validation.error.details.map((error) => error.message);
+      return res.status(422).send(errors);
+    }
+    if (!msg) {
+      return res.sendStatus(404);
+    }
+    if (msg.from != req.headers.user) {
+      return res.sendStatus(401);
+    }
     await db.collection("mensagem").updateOne(
       {
         _id: msg._id,
