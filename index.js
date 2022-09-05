@@ -1,6 +1,6 @@
 import express, { text } from "express";
 import cors from "cors";
-import { MongoClient } from "mongodb";
+import { MongoClient, ObjectId } from "mongodb";
 import joi from "joi";
 import dayjs from "dayjs";
 import dotenv from "dotenv";
@@ -114,7 +114,6 @@ server.get("/messages", async (req, res) => {
         ],
       })
       .toArray();
-    console.log(req.headers.user, messages);
     if (limit) {
       res.send(messages.slice(-limit));
     } else {
@@ -130,8 +129,6 @@ server.post("/status", async (req, res) => {
     .collection("participante")
     .find({ name: req.headers.user })
     .toArray();
-
-  console.log(activeUser);
 
   if (!activeUser) {
     return res.sendStatus(404);
@@ -149,12 +146,78 @@ server.post("/status", async (req, res) => {
   }
 });
 
-async function removeInactive() {
+server.delete("/messages/:id", async (req, res) => {
+  const id = req.params.id;
+
+  const msg = await db.collection("mensagem").findOne({ _id: ObjectId(id) });
+
+  if (!msg) {
+    return res.sendStatus(404);
+  }
+  if (msg.from != req.headers.user) {
+    return res.sendStatus(401);
+  }
+  try {
+    await db.collection("mensagem").deleteOne({ _id: ObjectId(id) });
+    res.sendStatus(201);
+  } catch (error) {
+    res.sendStatus(400);
+  }
+});
+
+server.put("/messages/:id", async (req, res) => {
+  const id = req.params.id;
+  const message = {
+    from: req.headers.user,
+    to: req.body.to,
+    text: req.body.text,
+    type: req.body.type,
+  };
+  const validation = messageSchema.validate(message, { abortEarly: false });
+  const msg = await db.collection("mensagem").findOne({ _id: ObjectId(id) });
+
+  if (validation.error) {
+    const errors = validation.error.details.map((error) => error.message);
+    return res.status(422).send(errors);
+  }
+  if (!msg) {
+    return res.sendStatus(404);
+  }
+  if (msg.from != req.headers.user) {
+    return res.sendStatus(401);
+  }
+  try {
+    await db.collection("mensagem").updateOne(
+      {
+        _id: msg._id,
+      },
+      { $set: message }
+    );
+    res.sendStatus(201);
+  } catch (error) {
+    res.sendStatus(400);
+  }
+});
+
+setInterval(async () => {
+  const inactive = await db
+    .collection("participante")
+    .find({ lastStatus: { $lt: Date.now() - 10000 } })
+    .toArray();
+
+  inactive.forEach((ans) => {
+    db.collection("mensagem").insertOne({
+      from: ans.name,
+      to: "Todos",
+      text: "sai na sala...",
+      type: "status",
+      time: now.format("HH:mm:ss"),
+    });
+  });
+
   await db
     .collection("participante")
     .deleteMany({ lastStatus: { $lt: Date.now() - 10000 } });
-}
-
-setInterval(removeInactive, 15000);
+}, 15000);
 
 server.listen(5000, () => console.log("Listening on port 5000"));
